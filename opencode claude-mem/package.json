@@ -1,0 +1,52 @@
+{
+  "name": "opencode-claude-mem",
+  "version": "1.0.0",
+  "description": "opencode plugin for claude-mem - shared session memory across opencode, Claude Code, and Cursor",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "opencode-claude-mem": "dist/cli.js"
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "claude-mem",
+    "memory",
+    "session",
+    "persistence"
+  ],
+  "author": "Julian David Aranda Lopez <juliandaranda@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arandajulian/opencode-claude-mem.git"
+  },
+  "homepage": "https://github.com/arandajulian/opencode-claude-mem#readme",
+  "bugs": {
+    "url": "https://github.com/arandajulian/opencode-claude-mem/issues"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.18.14",
+    "commander": "^12.0.0",
+    "execa": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
