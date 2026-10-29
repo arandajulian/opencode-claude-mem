@@ -1,6 +1,6 @@
 {
-  "name": "opencode-claude-mem",
-  "version": "1.0.0",
+  "name": "@arandajulian/opencode-claude-mem",
+  "version": "1.0.1",
   "description": "opencode plugin for claude-mem - shared session memory across opencode, Claude Code, and Cursor",
   "type": "module",
   "main": "dist/index.js",

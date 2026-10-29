@@ -20,11 +20,13 @@ program
   .option("-g, --global", "Install globally with npm", true)
   .option("-l, --local", "Install from local package (dev mode)", false)
   .option("--skip-link", "Skip linking to opencode config")
+  .option("--auto", "Full auto-setup: install worker, start it, create scheduled task (Windows)", false)
   .action(async (options) => {
     const { execa } = await import("execa");
     const { homedir } = await import("node:os");
     const { join, resolve } = await import("node:path");
-    const { existsSync, readFileSync } = await import("node:fs");
+    const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+    const { platform } = await import("node:process");
 
     console.log("📦 Installing opencode-claude-mem...");
 
@@ -63,6 +65,53 @@ program
         } else {
           console.log(`⚠️  Config not found at ${configPath}`);
           console.log("   Run 'opencode-claude-mem link' manually after opencode creates config");
+        }
+      }
+
+      // Auto-setup: install worker, start it, create scheduled task
+      if (options.auto) {
+        console.log("\n🤖 Running auto-setup...");
+        
+        // 1. Install claude-mem worker globally
+        console.log("   1/3 Installing claude-mem worker...");
+        try {
+          await execa("npm", ["install", "-g", "claude-mem"], { stdio: "inherit" });
+          console.log("   ✅ Worker installed");
+        } catch (e) {
+          console.log("   ⚠️  Worker install failed (may already exist)");
+        }
+
+        // 2. Start worker
+        console.log("   2/3 Starting worker...");
+        try {
+          await execa("claude-mem", ["worker", "start"], { stdio: "inherit" });
+          console.log("   ✅ Worker started");
+        } catch (e) {
+          console.log("   ⚠️  Worker start failed");
+        }
+
+        // 3. Create scheduled task on Windows
+        if (platform === "win32") {
+          console.log("   3/3 Creating Windows scheduled task for auto-start...");
+          try {
+            await execa("schtasks", [
+              "/create", "/tn", "ClaudeMemWorker",
+              "/tr", "cmd /c claude-mem worker start",
+              "/sc", "ONLOGON", "/rl", "HIGHEST", "/f"
+            ], { stdio: "inherit" });
+            console.log("   ✅ Scheduled task created (runs at logon)");
+          } catch (e) {
+            console.log("   ⚠️  Scheduled task creation failed (run as Admin to enable)");
+            console.log("      Run manually: schtasks /create /tn \"ClaudeMemWorker\" /tr \"cmd /c claude-mem worker start\" /sc ONLOGON /rl HIGHEST /f");
+          }
+        }
+
+        // Detect actual worker port and update config
+        console.log("\n   Detecting worker port...");
+        const workerUrl = await detectWorkerUrl();
+        if (workerUrl) {
+          console.log(`   ✅ Worker detected at ${workerUrl}`);
+          await updateConfigWithWorkerUrl(workerUrl);
         }
       }
 
@@ -131,15 +180,26 @@ program
 program
   .command("status")
   .description("Check plugin and worker status")
-  .option("-u, --url <url>", "Worker URL", "http://127.0.0.1:37700")
+  .option("-u, --url <url>", "Worker URL (auto-detected if not specified)")
   .action(async (options) => {
     console.log("🔍 Checking status...");
-    console.log(`   Worker URL: ${options.url}`);
+    
+    // Auto-detect worker URL if not provided
+    let workerUrl = options.url;
+    if (!workerUrl || workerUrl === "http://127.0.0.1:37700") {
+      workerUrl = await detectWorkerUrl() || "http://127.0.0.1:37700";
+      if (options.url !== workerUrl) {
+        console.log(`   Worker URL (auto-detected): ${workerUrl}`);
+      }
+    } else {
+      console.log(`   Worker URL: ${workerUrl}`);
+    }
     
     try {
-      const res = await fetch(`${options.url}/health`);
+      const res = await fetch(`${workerUrl}/health`);
       if (res.ok) {
-        console.log("✅ Worker: RUNNING");
+        const health = await res.json() as { pid?: number };
+        console.log(`✅ Worker: RUNNING (pid: ${health.pid}, port: ${new URL(workerUrl).port})`);
       } else {
         console.log(`⚠️  Worker: HTTP ${res.status}`);
       }
@@ -156,6 +216,14 @@ program
         Array.isArray(p) && (p[0] === pluginPath || p[0].includes("opencode-claude-mem"))
       );
       console.log(linked ? "✅ Plugin: LINKED" : "❌ Plugin: NOT LINKED");
+      
+      // Show configured workerUrl if different
+      const pluginEntry = config.plugin?.find((p: any) => 
+        Array.isArray(p) && (p[0] === pluginPath || p[0].includes("opencode-claude-mem"))
+      );
+      if (pluginEntry?.[1]?.workerUrl && pluginEntry[1].workerUrl !== workerUrl) {
+        console.log(`   ⚠️  Config has workerUrl: ${pluginEntry[1].workerUrl} (restart opencode to apply)`);
+      }
     } else {
       console.log("❌ Plugin: NO CONFIG");
     }
@@ -175,5 +243,60 @@ program
   .action(() => {
     console.log("🧹 Cache cleared (restart opencode to take effect)");
   });
+
+// Helper functions for auto-setup
+async function detectWorkerUrl(): Promise<string | null> {
+  const { homedir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { existsSync, readFileSync } = await import("node:fs");
+
+  // Check settings.json for actual port
+  const settingsPath = join(homedir(), ".claude-mem", "settings.json");
+  if (existsSync(settingsPath)) {
+    try {
+      const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+      const port = settings.CLAUDE_MEM_WORKER_PORT || settings.env?.CLAUDE_MEM_WORKER_PORT;
+      const host = settings.CLAUDE_MEM_WORKER_HOST || settings.env?.CLAUDE_MEM_WORKER_HOST || "127.0.0.1";
+      if (port) {
+        return `http://${host}:${port}`;
+      }
+    } catch {}
+  }
+
+  // Try common ports
+  const ports = [37777, 37700, 37778, 37779];
+  for (const port of ports) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      if (res.ok) return `http://127.0.0.1:${port}`;
+    } catch {}
+  }
+  return null;
+}
+
+async function updateConfigWithWorkerUrl(workerUrl: string): Promise<void> {
+  const { homedir } = await import("node:os");
+  const { join, resolve } = await import("node:path");
+  const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+
+  const configPath = join(homedir(), ".config", "opencode", "opencode.jsonc");
+  const pluginPath = resolve(__dirname, "..");
+
+  if (!existsSync(configPath)) return;
+
+  const config = JSON.parse(readFileSync(configPath, "utf8"));
+  config.plugin = config.plugin || [];
+  
+  // Find and update plugin entry
+  for (const p of config.plugin) {
+    if (Array.isArray(p) && (p[0] === pluginPath || p[0].includes("opencode-claude-mem"))) {
+      p[1] = { ...p[1], workerUrl };
+      break;
+    }
+  }
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2));
+  console.log(`   ✅ Config updated with workerUrl: ${workerUrl}`);
+}
 
 program.parse();

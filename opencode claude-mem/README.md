@@ -34,7 +34,22 @@
 
 ## Installation
 
-### Quick Install (Recommended)
+### 🚀 One-Command Auto-Setup (Recommended)
+
+```bash
+# Full auto-setup: installs plugin, worker, starts worker, creates Windows scheduled task
+npx opencode-claude-mem install --auto
+```
+
+This single command:
+1. ✅ Installs `opencode-claude-mem` globally
+2. ✅ Installs `claude-mem` worker globally
+3. ✅ Starts the worker
+4. ✅ Links plugin to opencode config
+5. ✅ Auto-detects worker port & updates config
+6. ✅ Creates Windows scheduled task for auto-start at logon (Windows only)
+
+### Quick Install (Manual)
 
 ```bash
 # Install globally (available in all projects)
@@ -57,13 +72,13 @@ npm run build
 opencode-claude-mem link
 ```
 
-### Worker Setup
+### Worker Setup (Auto-detected if using `--auto`)
 
-The plugin requires a **claude-mem worker** running on `http://127.0.0.1:37700` (default).
+The plugin requires a **claude-mem worker** running locally.
 
 ```bash
 # Install worker globally
-npm install -g @thedotmack/claude-mem
+npm install -g claude-mem
 
 # Start worker (runs in background)
 claude-mem worker start
@@ -81,6 +96,8 @@ claude-mem worker
 }
 ```
 
+> 💡 **Auto-detection**: The plugin automatically detects the worker port from `settings.json` or by probing common ports (37777, 37700, 37778...). No manual config needed in most cases.
+
 ## Configuration
 
 Add to your opencode config (`~/.config/opencode/opencode.jsonc`):
@@ -90,7 +107,7 @@ Add to your opencode config (`~/.config/opencode/opencode.jsonc`):
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     ["opencode-claude-mem", {
-      "workerUrl": "http://127.0.0.1:37700",
+      "workerUrl": "http://127.0.0.1:37777",
       "contextCacheMs": 60000,
       "maxToolResponseLen": 1000,
       "circuitBreakerThreshold": 3,
@@ -100,11 +117,13 @@ Add to your opencode config (`~/.config/opencode/opencode.jsonc`):
 }
 ```
 
+> 💡 **Optional**: `workerUrl` can be omitted — the plugin auto-detects the worker port from `~/.claude-mem/settings.json` or by probing common ports (37777, 37700, 37778...). The `install --auto` command also detects and sets this automatically.
+
 ### Plugin Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `workerUrl` | `string` | `"http://127.0.0.1:37700"` | Worker HTTP endpoint |
+| `workerUrl` | `string` | Auto-detected | Worker HTTP endpoint (optional) |
 | `contextCacheMs` | `number` | `60000` | Context injection cache TTL |
 | `maxToolResponseLen` | `number` | `1000` | Max chars for tool response in observations |
 | `circuitBreakerThreshold` | `number` | `3` | Failures before opening circuit |
@@ -124,7 +143,10 @@ Once installed and configured, the plugin works automatically:
 ### Commands
 
 ```bash
-# Check plugin status
+# Full auto-setup (installs plugin, worker, starts worker, creates Windows scheduled task)
+opencode-claude-mem install --auto
+
+# Check plugin status (auto-detects worker port)
 opencode-claude-mem status
 
 # View current session info
@@ -136,6 +158,15 @@ opencode-claude-mem clear-cache
 # Uninstall from opencode
 opencode-claude-mem unlink
 ```
+
+### Install Options
+
+| Flag | Description |
+|------|-------------|
+| `--auto` | Full auto-setup: install worker, start it, create scheduled task (Windows) |
+| `-g, --global` | Install globally with npm (default) |
+| `-l, --local` | Install from local package (dev mode) |
+| `--skip-link` | Skip linking to opencode config |
 
 ### Environment Variables
 

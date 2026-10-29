@@ -49,8 +49,23 @@ export function readClaudeMemSettings(): ClaudeMemSettings {
   return {};
 }
 
-export function resolveWorkerUrl(config: PluginConfig): string {
-  // Priority: plugin config > env > settings.json > default
+// Auto-detect worker port by probing common ports
+async function detectWorkerPort(): Promise<number | null> {
+  const ports = [37777, 37700, 37778, 37779, 37780];
+  for (const port of ports) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1000);
+      const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) return port;
+    } catch {}
+  }
+  return null;
+}
+
+export async function resolveWorkerUrl(config: PluginConfig): Promise<string> {
+  // Priority: plugin config > env > settings.json > auto-detect > default
   if (config.workerUrl) return config.workerUrl;
   
   const envUrl = process.env.CLAUDE_MEM_WORKER_URL;
@@ -58,15 +73,29 @@ export function resolveWorkerUrl(config: PluginConfig): string {
   
   const settings = readClaudeMemSettings();
   const host = process.env.CLAUDE_MEM_WORKER_HOST || settings.CLAUDE_MEM_WORKER_HOST || "127.0.0.1";
-  const port = process.env.CLAUDE_MEM_WORKER_PORT || settings.CLAUDE_MEM_WORKER_PORT || "37700";
-  const urlHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  const port = process.env.CLAUDE_MEM_WORKER_PORT || settings.CLAUDE_MEM_WORKER_PORT;
   
-  return `http://${urlHost}:${port}`;
+  if (port) {
+    const urlHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+    return `http://${urlHost}:${port}`;
+  }
+  
+  // Auto-detect running worker
+  const detectedPort = await detectWorkerPort();
+  if (detectedPort) {
+    console.log(`[claude-mem] Auto-detected worker at port ${detectedPort}`);
+    const urlHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+    return `http://${urlHost}:${detectedPort}`;
+  }
+  
+  // Fallback to default
+  const urlHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  return `http://${urlHost}:37700`;
 }
 
-function getConfig(config: PluginConfig | undefined): Required<PluginConfig> {
+async function getConfig(config: PluginConfig | undefined): Promise<Required<PluginConfig>> {
   return {
-    workerUrl: resolveWorkerUrl(config ?? {}),
+    workerUrl: await resolveWorkerUrl(config ?? {}),
     contextCacheMs: config?.contextCacheMs ?? 60_000,
     maxToolResponseLen: config?.maxToolResponseLen ?? 1000,
     circuitBreakerThreshold: config?.circuitBreakerThreshold ?? 3,
@@ -241,7 +270,7 @@ export default async function claudeMemPlugin(
   options?: PluginOptions
 ): Promise<Hooks> {
   // Initialize config and breaker
-  cfg = getConfig(options as PluginConfig | undefined);
+  cfg = await getConfig(options as PluginConfig | undefined);
   breaker = new CircuitBreaker(cfg.circuitBreakerThreshold, cfg.circuitBreakerTimeoutMs);
   
   // Initialize session

@@ -38,13 +38,13 @@ describe("opencode-claude-mem", () => {
   });
 
   describe("resolveWorkerUrl", () => {
-    it("uses plugin config workerUrl", () => {
-      const url = resolveWorkerUrl({ workerUrl: "http://custom:1234" });
+    it("uses plugin config workerUrl", async () => {
+      const url = await resolveWorkerUrl({ workerUrl: "http://custom:1234" });
       expect(url).toBe("http://custom:1234");
     });
 
-    it("returns a valid URL", () => {
-      const url = resolveWorkerUrl({});
+    it("returns a valid URL", async () => {
+      const url = await resolveWorkerUrl({});
       expect(url).toMatch(/^http:\/\/[\w.:]+:\d+$/);
     });
   });
